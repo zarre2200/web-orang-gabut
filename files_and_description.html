@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Files and Description</title>
+  <script src="config.js"></script>
   <style>
     body { font-family: Arial, sans-serif; background:#f4f4f4; margin:0; display:flex; align-items:flex-start; justify-content:center; padding-top:80px; min-height:100vh }
     .container { background:#fff; padding:20px; border-radius:8px; box-shadow:0 0 10px rgba(0,0,0,.1); width:calc(100% - 40px); max-width:1200px }
@@ -223,7 +224,7 @@
       return b.toFixed(b<10 && i>0?2:1) + ' ' + units[i];
     }
 
-    // Save to localStorage as data URLs (resized) and redirect to Home
+    // Post to server (API)
     document.getElementById('fadForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const words = updateCounter();
@@ -236,48 +237,47 @@
       const photoData = photoFile ? await resizeImage(photoFile, 1024, 768, 0.8) : (window.__existingPhotoData || '');
       const videoData = videoFile ? await transcodeVideoIfNeeded(videoFile, 640, 360) : (window.__existingVideoData || '');
 
-      const saved = {
-        id: Date.now(), // unique id for each post
+      const postData = {
         photoData: photoData || '',
         photoName: photoFile ? photoFile.name : '',
         videoData: videoData || '',
         videoName: videoFile ? videoFile.name : '',
-        description: description.value,
-        timestamp: new Date().toLocaleString()
+        description: description.value
       };
+      
       try {
-        // get existing posts array or create new one
-        let posts = [];
-        const existingPosts = localStorage.getItem('filesAndDescription_posts');
-        if (existingPosts) {
-          posts = JSON.parse(existingPosts);
-        }
-        
-        // check if editing (updating existing post)
         const editRaw = localStorage.getItem('filesAndDescription_edit');
+        let response;
+        const isEdit = !!editRaw;
+        
+        console.log('[CLIENT] Starting post submission...');
+        console.log('[CLIENT] Server URL:', API.baseURL);
+        console.log('[CLIENT] Is Edit:', isEdit);
+        console.log('[CLIENT] Post data size:', JSON.stringify(postData).length, 'bytes');
+        
         if (editRaw) {
+          // Update existing post
           const originalPost = JSON.parse(editRaw);
-          const postIndex = posts.findIndex(p => p.id === originalPost.id);
-          if (postIndex >= 0) {
-            saved.id = originalPost.id; // keep same id when editing
-            posts[postIndex] = saved; // update existing post
-          } else {
-            posts.unshift(saved); // add to array if not found
-          }
+          console.log('[CLIENT] Updating post with id:', originalPost.id);
+          await API.updatePost(originalPost.id, postData);
           localStorage.removeItem('filesAndDescription_edit');
         } else {
-          posts.unshift(saved); // add new post to beginning
+          // Create new post
+          console.log('[CLIENT] Creating new post');
+          await API.createPost(postData);
         }
         
-        localStorage.setItem('filesAndDescription_posts', JSON.stringify(posts));
-        alert('Posted locally. Redirecting to Home to view content.');
+        console.log('[CLIENT] Success! Post submitted');
+        alert('Posted to server. Redirecting to Home to view content.');
         window.location.href = 'index.html';
+        
       } catch (err) {
-        alert('Failed to save (storage may be full).');
+        console.error('[CLIENT] Connection error:', err);
+        alert('Connection error. Make sure server is running at ' + API.baseURL + '\n\nError: ' + err.message + '\n\nCheck browser console (F12) for details.');
       }
     });
 
-    // load saved metadata or edit payload
+    // load saved metadata or edit payload for editing
     window.addEventListener('load', async () => {
       // only load content if coming from Edit button (filesAndDescription_edit is set)
       const editRaw = localStorage.getItem('filesAndDescription_edit');

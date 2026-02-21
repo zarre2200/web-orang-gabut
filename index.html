@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Home</title>
+    <script src="config.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -80,15 +81,20 @@
                 </div>
         </div>
         <script>
-            // Load all posts from localStorage and display them
-            function loadSavedMedia() {
-                const postsRaw = localStorage.getItem('filesAndDescription_posts');
+            // Load all posts from server API and display them
+            async function loadSavedMedia() {
                 const mediaDisplay = document.getElementById('mediaDisplay');
-                if (!postsRaw) return;
                 
                 try {
-                    const posts = JSON.parse(postsRaw);
-                    if (!Array.isArray(posts) || posts.length === 0) return;
+                    console.log('[CLIENT] Loading posts from server...');
+                    console.log('[CLIENT] Server URL:', API.baseURL);
+                    const posts = await API.getPosts();
+                    console.log('[CLIENT] Received', posts.length, 'posts from server');
+                    
+                    if (!Array.isArray(posts) || posts.length === 0) {
+                        console.log('[CLIENT] No posts to display');
+                        return;
+                    }
                     
                     mediaDisplay.innerHTML = ''; // clear existing posts
                     
@@ -144,6 +150,7 @@
                         editBtn.textContent = 'Edit';
                         editBtn.style.cssText = 'display:block; width:100%; padding:8px 12px; border:none; background:transparent; text-align:left; cursor:pointer;';
                         editBtn.addEventListener('click', () => {
+                            console.log('[CLIENT] Edit post:', post.id);
                             localStorage.setItem('filesAndDescription_edit', JSON.stringify(post));
                             window.location.href = 'files_and_description.html';
                         });
@@ -151,17 +158,21 @@
                         const deleteBtn = document.createElement('button');
                         deleteBtn.textContent = 'Delete';
                         deleteBtn.style.cssText = 'display:block; width:100%; padding:8px 12px; border:none; background:transparent; text-align:left; cursor:pointer;';
-                        deleteBtn.addEventListener('click', () => {
+                        deleteBtn.addEventListener('click', async () => {
                             if (!confirm('Delete this post?')) return;
                             try {
-                                let allPosts = JSON.parse(localStorage.getItem('filesAndDescription_posts') || '[]');
-                                allPosts = allPosts.filter(p => p.id !== post.id);
-                                localStorage.setItem('filesAndDescription_posts', JSON.stringify(allPosts));
+                                console.log('[CLIENT] Deleting post:', post.id);
+                                await API.deletePost(post.id);
+                                console.log('[CLIENT] Post deleted successfully');
                                 postContainer.remove();
-                                if (allPosts.length === 0) {
+                                const remaining = document.querySelectorAll('[data-post-id]').length;
+                                if (remaining === 0) {
                                     mediaDisplay.innerHTML = '<p>No media saved yet. Use Files and Description to create content.</p>';
                                 }
-                            } catch(err) { alert('Could not delete post.'); }
+                            } catch(err) { 
+                                console.error('[CLIENT] Delete error:', err);
+                                alert('Delete failed: ' + err.message); 
+                            }
                         });
                         
                         actionsMenu.appendChild(editBtn);
@@ -179,7 +190,10 @@
                         mediaDisplay.appendChild(postContainer);
                     });
                     
-                } catch(e) { console.warn('Failed to load posts', e); }
+                } catch(e) { 
+                    console.error('[CLIENT] Failed to load posts:', e);
+                    mediaDisplay.innerHTML = '<p style="color:red;">Cannot connect to server at ' + API.baseURL + '</p><p>Make sure the server is running.</p>';
+                }
             }
             window.addEventListener('load', loadSavedMedia);
         </script>
