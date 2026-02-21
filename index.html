@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            height: 100vh;
+        }
+        .sidebar {
+            position: absolute;
+            left: 12px;
+            top: 8px;
+            font-size: 12px;
+            color: #333;
+            background: transparent;
+        }
+        .sidebar h1 {
+            margin: 0 0 8px 0;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .sidebar a {
+            display: block;
+            color: #4CAF50;
+            text-decoration: none;
+            margin: 6px 0;
+        }
+        .center-area {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            width: 640px;
+            max-width: calc(100% - 40px);
+            text-align: center;
+            position: relative;
+        }
+        .card img, .card video { max-width: 100%; height: auto; display:block; margin: 0 auto 12px }
+        #mediaDisplay { position: relative; display:flex; flex-direction:column; gap:12px; margin-top: 100px; }
+        /* make actions button smaller so it doesn't cover text */
+        .actions-btn { font-size:16px; padding:4px 6px }
+        .actions-btn { position: absolute; right: 12px; bottom: 12px; background: transparent; border: none; font-size:18px; cursor: pointer }
+        .actions-menu { position: absolute; right: 12px; bottom: 36px; background: white; border: 1px solid #ddd; box-shadow:0 2px 6px rgba(0,0,0,.1); display:none; z-index:50 }
+        .actions-menu button { display:block; width:100%; padding:8px 12px; border:none; background:transparent; text-align:left; cursor:pointer }
+        .desc { text-align: left; white-space: pre-wrap }
+
+        /* responsive design for mobile devices */
+        @media (max-width: 600px) {
+          .sidebar { left: 8px; top: 4px; font-size: 10px; }
+          .sidebar h1 { font-size: 12px; }
+          .card { padding: 15px; width: calc(100% - 20px); max-width: none; }
+          #mediaContainer img, #mediaContainer video { max-height: 240px; }
+          .actions-btn { font-size: 14px; }
+        }
+    </style>
+</head>
+<body>
+        <div class="sidebar">
+                <h1>Welcome to the Main Page</h1>
+                <a href="index.html">Home</a>
+                <a href="files_and_description.html">Files and Description</a>
+        </div>
+        <div class="center-area">
+                <div class="card" id="displayCard">
+                    <h2>Home</h2>
+                    <div id="mediaDisplay">
+                        <p>No media saved yet. Use Files and Description to create content.</p>
+                    </div>
+                </div>
+        </div>
+        <script>
+            // Load all posts from localStorage and display them
+            function loadSavedMedia() {
+                const postsRaw = localStorage.getItem('filesAndDescription_posts');
+                const mediaDisplay = document.getElementById('mediaDisplay');
+                if (!postsRaw) return;
+                
+                try {
+                    const posts = JSON.parse(postsRaw);
+                    if (!Array.isArray(posts) || posts.length === 0) return;
+                    
+                    mediaDisplay.innerHTML = ''; // clear existing posts
+                    
+                    // display each post in order
+                    posts.forEach((post, index) => {
+                        const postContainer = document.createElement('div');
+                        postContainer.style.cssText = 'border-top: 1px solid #ddd; padding-top: 12px; margin-bottom: 20px;';
+                        postContainer.dataset.postId = post.id;
+                        
+                        const mediaContainer = document.createElement('div');
+                        // show video first (if any), then photo
+                        if (post.videoData) {
+                            const vid = document.createElement('video');
+                            vid.controls = true;
+                            vid.style.cssText = 'max-width:100%; max-height:360px; object-fit:contain; display:block; margin:0 auto 12px';
+                            vid.src = post.videoData;
+                            mediaContainer.appendChild(vid);
+                        }
+                        if (post.photoData) {
+                            const img = document.createElement('img');
+                            img.style.cssText = 'max-width:100%; max-height:360px; object-fit:contain; display:block; margin:0 auto 12px';
+                            img.src = post.photoData;
+                            mediaContainer.appendChild(img);
+                        }
+                        postContainer.appendChild(mediaContainer);
+                        
+                        const descContainer = document.createElement('div');
+                        descContainer.style.cssText = 'position: relative; padding-top: 6px; padding-bottom: 48px;';
+                        const descText = document.createElement('div');
+                        descText.className = 'desc';
+                        descText.textContent = post.description || '';
+                        descContainer.appendChild(descText);
+                        
+                        // add timestamp
+                        if (post.timestamp) {
+                            const ts = document.createElement('div');
+                            ts.style.cssText = 'font-size: 10px; color: #999; margin-top: 8px;';
+                            ts.textContent = post.timestamp;
+                            descContainer.appendChild(ts);
+                        }
+                        
+                        // actions button
+                        const actionsBtn = document.createElement('button');
+                        actionsBtn.className = 'actions-btn';
+                        actionsBtn.textContent = '⋯';
+                        actionsBtn.style.cssText = 'position: absolute; right: 12px; bottom: 12px; background: transparent; border: none; font-size: 16px; cursor: pointer; padding: 4px 6px;';
+                        
+                        const actionsMenu = document.createElement('div');
+                        actionsMenu.className = 'actions-menu';
+                        actionsMenu.style.cssText = 'position: absolute; right: 12px; bottom: 36px; background: white; border: 1px solid #ddd; box-shadow: 0 2px 6px rgba(0,0,0,0.1); display: none; z-index: 50;';
+                        
+                        const editBtn = document.createElement('button');
+                        editBtn.textContent = 'Edit';
+                        editBtn.style.cssText = 'display:block; width:100%; padding:8px 12px; border:none; background:transparent; text-align:left; cursor:pointer;';
+                        editBtn.addEventListener('click', () => {
+                            localStorage.setItem('filesAndDescription_edit', JSON.stringify(post));
+                            window.location.href = 'files_and_description.html';
+                        });
+                        
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.textContent = 'Delete';
+                        deleteBtn.style.cssText = 'display:block; width:100%; padding:8px 12px; border:none; background:transparent; text-align:left; cursor:pointer;';
+                        deleteBtn.addEventListener('click', () => {
+                            if (!confirm('Delete this post?')) return;
+                            try {
+                                let allPosts = JSON.parse(localStorage.getItem('filesAndDescription_posts') || '[]');
+                                allPosts = allPosts.filter(p => p.id !== post.id);
+                                localStorage.setItem('filesAndDescription_posts', JSON.stringify(allPosts));
+                                postContainer.remove();
+                                if (allPosts.length === 0) {
+                                    mediaDisplay.innerHTML = '<p>No media saved yet. Use Files and Description to create content.</p>';
+                                }
+                            } catch(err) { alert('Could not delete post.'); }
+                        });
+                        
+                        actionsMenu.appendChild(editBtn);
+                        actionsMenu.appendChild(deleteBtn);
+                        
+                        actionsBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            actionsMenu.style.display = actionsMenu.style.display === 'block' ? 'none' : 'block';
+                        });
+                        
+                        descContainer.appendChild(actionsBtn);
+                        descContainer.appendChild(actionsMenu);
+                        postContainer.appendChild(descContainer);
+                        
+                        mediaDisplay.appendChild(postContainer);
+                    });
+                    
+                } catch(e) { console.warn('Failed to load posts', e); }
+            }
+            window.addEventListener('load', loadSavedMedia);
+        </script>
+</body>
+</html>

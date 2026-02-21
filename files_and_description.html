@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Files and Description</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#f4f4f4; margin:0; display:flex; align-items:flex-start; justify-content:center; padding-top:80px; min-height:100vh }
+    .container { background:#fff; padding:20px; border-radius:8px; box-shadow:0 0 10px rgba(0,0,0,.1); width:calc(100% - 40px); max-width:1200px }
+    h2 { margin-top:0 }
+    label { display:block; margin:10px 0 6px }
+    input[type=file] { width:100%; display:block; padding:10px 12px; border:1px solid #ccc; border-radius:6px; background:#fafafa; box-sizing:border-box }
+    textarea { width:100%; min-height:140px; padding:8px; resize:vertical }
+    .row { display:flex; gap:8px }
+    .note { font-size:12px; color:#666 }
+    .counter { float:right; font-size:12px; color:#666 }
+    button { margin-top:12px; padding:10px 16px; background:#4CAF50; color:#fff; border:none; border-radius:4px; cursor:pointer }
+    /* constrain preview media so it doesn't overlap description area */
+    #preview img, #preview video { max-width:100%; max-height:360px; object-fit:contain; display:block; margin-bottom:8px }
+    #preview p { margin-top:8px }
+
+    /* responsive design for mobile devices */
+    @media (max-width: 600px) {
+      body { padding-top: 40px; }
+      .container { padding: 15px; width: calc(100% - 20px); max-width: none; }
+      button { padding: 12px 20px; font-size: 16px; }
+      textarea { min-height: 120px; }
+      .row { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Files and Description</h2>
+    <form id="fadForm">
+      <label for="photo">Photo (image file)</label>
+      <input type="file" id="photo" accept="image/*">
+
+      <label for="video">Video (mp4/webm)</label>
+      <input type="file" id="video" accept="video/*">
+
+      <label for="description">Description <span class="counter" id="wordCounter">0 / 300 words</span></label>
+      <textarea id="description" placeholder="Write up to 300 words..."></textarea>
+      <div class="note">Only client-side validation; files are not uploaded to a server.</div>
+
+      <div class="row">
+        <button type="button" id="previewBtn">Preview</button>
+        <button type="submit">Post</button>
+      </div>
+      <div id="sizeInfo" class="note" style="margin-top:8px"></div>
+    </form>
+
+    <div id="preview" style="margin-top:16px"></div>
+  </div>
+
+  <script>
+    // word counting (approximate by splitting on whitespace)
+    const description = document.getElementById('description');
+    const counter = document.getElementById('wordCounter');
+    function updateCounter() {
+      const text = description.value.trim();
+      const words = text === '' ? 0 : text.split(/\s+/).length;
+      counter.textContent = words + ' / 300 words';
+      if (words > 300) counter.style.color = 'red'; else counter.style.color = '#666';
+      return words;
+    }
+    description.addEventListener('input', updateCounter);
+
+    // preview (uses resized/transcoded blobs when possible)
+    document.getElementById('previewBtn').addEventListener('click', async () => {
+      const preview = document.getElementById('preview');
+      const sizeInfo = document.getElementById('sizeInfo');
+      preview.innerHTML = '';
+      sizeInfo.textContent = '';
+      const photoFile = document.getElementById('photo').files[0];
+      const videoFile = document.getElementById('video').files[0];
+
+      const photoData = photoFile ? await resizeImage(photoFile, 1024, 768, 0.8) : (window.__existingPhotoData || null);
+      const videoData = videoFile ? await transcodeVideoIfNeeded(videoFile, 640, 360) : (window.__existingVideoData || null);
+
+      // compute sizes (original vs processed)
+      const parts = [];
+      if (photoFile) parts.push('Original photo: ' + formatBytes(photoFile.size));
+      if (photoData) parts.push('Processed photo: ' + formatBytes(dataURLSize(photoData)));
+      if (videoFile) parts.push('Original video: ' + formatBytes(videoFile.size));
+      if (videoData) parts.push('Processed video: ' + formatBytes(dataURLSize(videoData)));
+      if (parts.length) sizeInfo.textContent = parts.join(' \n');
+
+      if (videoData) {
+        const vid = document.createElement('video');
+        vid.controls = true;
+        vid.style.maxWidth = '100%';
+        vid.style.marginBottom = '8px';
+        vid.src = videoData;
+        preview.appendChild(vid);
+      }
+
+      if (photoData) {
+        const img = document.createElement('img');
+        img.style.maxWidth = '100%';
+        img.style.marginBottom = '8px';
+        img.src = photoData;
+        preview.appendChild(img);
+      }
+
+      const words = updateCounter();
+      const p = document.createElement('p');
+      p.textContent = description.value;
+      preview.appendChild(p);
+    });
+
+    // helper: resize image file to dataURL
+    function resizeImage(file, maxW, maxH, quality=0.8) {
+      return new Promise((resolve) => {
+        if (!file) return resolve(null);
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          let w = img.width, h = img.height;
+          const ratio = Math.min(maxW / w, maxH / h, 1);
+          w = Math.round(w * ratio);
+          h = Math.round(h * ratio);
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          canvas.toBlob((blob) => {
+            if (!blob) return resolve(null);
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+          }, 'image/jpeg', quality);
+          URL.revokeObjectURL(url);
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+        img.src = url;
+      });
+    }
+
+    // helper: transcode video by drawing into canvas and recording (falls back to original dataURL)
+    function transcodeVideoIfNeeded(file, targetW=640, targetH=360) {
+      return new Promise((resolve) => {
+        if (!file) return resolve(null);
+        // If MediaRecorder or canvas capture not supported, fallback to original data URL
+        if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.readAsDataURL(file);
+          return;
+        }
+
+        const video = document.createElement('video');
+        video.muted = true;
+        video.playsInline = true;
+        video.src = URL.createObjectURL(file);
+        video.onloadedmetadata = () => {
+          // calculate target size preserving aspect ratio
+          const ratio = Math.min(targetW / video.videoWidth, targetH / video.videoHeight, 1);
+          const w = Math.round(video.videoWidth * ratio);
+          const h = Math.round(video.videoHeight * ratio);
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+
+          const stream = canvas.captureStream(15); // 15 fps
+          const options = { mimeType: 'video/webm;codecs=vp8' };
+          let recordedChunks = [];
+          try {
+            const mr = new MediaRecorder(stream, options);
+            mr.ondataavailable = (e) => { if (e.data && e.data.size) recordedChunks.push(e.data); };
+            mr.onstop = () => {
+              const blob = new Blob(recordedChunks, { type: 'video/webm' });
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result);
+              reader.readAsDataURL(blob);
+              URL.revokeObjectURL(video.src);
+            };
+
+            video.play().catch(() => { /* ignore */ });
+            mr.start();
+
+            // draw frames
+            const draw = () => {
+              if (video.paused || video.ended) return;
+              ctx.drawImage(video, 0, 0, w, h);
+              requestAnimationFrame(draw);
+            };
+            video.onplay = draw;
+            video.onended = () => { setTimeout(() => mr.stop(), 200); };
+          } catch (err) {
+            // fallback to original
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.readAsDataURL(file);
+            URL.revokeObjectURL(video.src);
+          }
+        };
+        video.onerror = () => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.readAsDataURL(file);
+        };
+      });
+    }
+
+    // helper: estimate dataURL size in bytes
+    function dataURLSize(dataURL) {
+      if (!dataURL) return 0;
+      const parts = dataURL.split(',');
+      if (parts.length < 2) return 0;
+      const base64 = parts[1];
+      const padding = (base64.endsWith('==') ? 2 : (base64.endsWith('=') ? 1 : 0));
+      return Math.ceil(base64.length * 3 / 4) - padding;
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes) return '0 B';
+      const units = ['B','KB','MB','GB'];
+      let i = 0; let b = bytes;
+      while (b >= 1024 && i < units.length-1) { b/=1024; i++; }
+      return b.toFixed(b<10 && i>0?2:1) + ' ' + units[i];
+    }
+
+    // Save to localStorage as data URLs (resized) and redirect to Home
+    document.getElementById('fadForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const words = updateCounter();
+      if (words > 300) { alert('Description exceeds 300 words.'); return; }
+
+      const photoFile = document.getElementById('photo').files[0];
+      const videoFile = document.getElementById('video').files[0];
+
+      // prefer newly selected files; if none selected and edit payload exists, reuse existing data
+      const photoData = photoFile ? await resizeImage(photoFile, 1024, 768, 0.8) : (window.__existingPhotoData || '');
+      const videoData = videoFile ? await transcodeVideoIfNeeded(videoFile, 640, 360) : (window.__existingVideoData || '');
+
+      const saved = {
+        id: Date.now(), // unique id for each post
+        photoData: photoData || '',
+        photoName: photoFile ? photoFile.name : '',
+        videoData: videoData || '',
+        videoName: videoFile ? videoFile.name : '',
+        description: description.value,
+        timestamp: new Date().toLocaleString()
+      };
+      try {
+        // get existing posts array or create new one
+        let posts = [];
+        const existingPosts = localStorage.getItem('filesAndDescription_posts');
+        if (existingPosts) {
+          posts = JSON.parse(existingPosts);
+        }
+        
+        // check if editing (updating existing post)
+        const editRaw = localStorage.getItem('filesAndDescription_edit');
+        if (editRaw) {
+          const originalPost = JSON.parse(editRaw);
+          const postIndex = posts.findIndex(p => p.id === originalPost.id);
+          if (postIndex >= 0) {
+            saved.id = originalPost.id; // keep same id when editing
+            posts[postIndex] = saved; // update existing post
+          } else {
+            posts.unshift(saved); // add to array if not found
+          }
+          localStorage.removeItem('filesAndDescription_edit');
+        } else {
+          posts.unshift(saved); // add new post to beginning
+        }
+        
+        localStorage.setItem('filesAndDescription_posts', JSON.stringify(posts));
+        alert('Posted locally. Redirecting to Home to view content.');
+        window.location.href = 'index.html';
+      } catch (err) {
+        alert('Failed to save (storage may be full).');
+      }
+    });
+
+    // load saved metadata or edit payload
+    window.addEventListener('load', async () => {
+      // only load content if coming from Edit button (filesAndDescription_edit is set)
+      const editRaw = localStorage.getItem('filesAndDescription_edit');
+      if (!editRaw) return; // show blank form unless editing
+      const payload = editRaw;
+      if (!payload) return;
+      try {
+        const obj = JSON.parse(payload);
+        // populate description
+        document.getElementById('description').value = obj.description || '';
+        updateCounter();
+
+        // if there is existing photo/video data, show in preview and mark editing mode
+        const preview = document.getElementById('preview');
+        preview.innerHTML = '';
+        if (obj.videoData) {
+          const vid = document.createElement('video');
+          vid.controls = true;
+          vid.style.maxWidth = '100%';
+          vid.style.marginBottom = '8px';
+          vid.src = obj.videoData;
+          preview.appendChild(vid);
+          // mark existing video data in a hidden variable
+          window.__existingVideoData = obj.videoData;
+        }
+        if (obj.photoData) {
+          const img = document.createElement('img');
+          img.style.maxWidth = '100%';
+          img.style.marginBottom = '8px';
+          img.src = obj.photoData;
+          preview.appendChild(img);
+          window.__existingPhotoData = obj.photoData;
+        }
+
+        // change Post button text to Update Post when editing
+        if (editRaw) {
+          const submitBtn = document.querySelector('#fadForm button[type=submit]');
+          if (submitBtn) submitBtn.textContent = 'Update Post';
+        }
+      } catch (e) { }
+    });
+
+    // show original file sizes when user selects files
+    document.getElementById('photo').addEventListener('change', () => {
+      const f = document.getElementById('photo').files[0];
+      const sizeInfo = document.getElementById('sizeInfo');
+      if (f) sizeInfo.textContent = 'Original photo: ' + formatBytes(f.size);
+      else sizeInfo.textContent = '';
+    });
+    document.getElementById('video').addEventListener('change', () => {
+      const f = document.getElementById('video').files[0];
+      const sizeInfo = document.getElementById('sizeInfo');
+      if (f) sizeInfo.textContent = (sizeInfo.textContent ? sizeInfo.textContent + ' \n' : '') + 'Original video: ' + formatBytes(f.size);
+      else sizeInfo.textContent = '';
+    });
+  </script>
+</body>
+</html>
